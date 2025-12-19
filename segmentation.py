@@ -7,29 +7,34 @@ import matplotlib.pyplot as plt
 
 from improve import LeNet5
 
-IMAGE_PATH = "images/test1.jpg"
+IMAGE_PATH = "images/test3.jpg"
 
 def predit_line_of_digits(image_path, model, device, transform):
-  global num
   img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
   img = cv2.bitwise_not(img)
-
-  # just take the pixel has value from 128 to 255
-  _, thresh = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY)
-  # use erosion to reduce the noise 
-  thresh = cv2.morphologyEx(thresh, cv2.MORPH_ERODE, np.ones((5, 5), np.uint8))
-  # use closing to connect components (small gap)
-  thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
+  img = cv2.medianBlur(img, 19)
+  # img = cv2.GaussianBlur(img, (35, 35), 0)
   plt.figure()
   plt.subplot(231)
   plt.imshow(img, cmap="gray")
+
+  # just take the pixel has value from 128 to 255
+  _, thresh_org = cv2.threshold(img, 128, 255, cv2.THRESH_BINARY)
+  # use closing to connect components (small gap)
+  thresh_org = cv2.morphologyEx(thresh_org, cv2.MORPH_CLOSE, np.ones((15, 15), np.uint8))
   plt.subplot(232)
+  plt.imshow(thresh_org, cmap="gray")
+  # use delating to make the digit bigger -> use for contouring
+  thresh = cv2.morphologyEx(thresh_org, cv2.MORPH_DILATE, np.ones((9, 9), np.uint8))
+  plt.subplot(233)
   plt.imshow(thresh, cmap="gray")
+  
+  
   
   # find contours (each segmentation) 
   contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
   cv2.drawContours(img, contours, -1, (0, 0, 255), 5)
-  plt.subplot(233)
+  plt.subplot(234)
   plt.imshow(img, cmap="gray")
 
   # sort contours from left to right
@@ -39,26 +44,20 @@ def predit_line_of_digits(image_path, model, device, transform):
   full_number_string = ""
 
   for (x, y, w, h) in bounding_boxes:
-    # ignore noise (if the contour below 5000 pixel)
-    if w * h < 5000: 
-      continue
-
     # crop into the digit
     pad = 5
-    roi = thresh[max(0, y-pad):y+h+pad, max(0, x-pad):x+w+pad]
+    roi = thresh_org[max(0, y-pad):y+h+pad, max(0, x-pad):x+w+pad]
 
     # convert it to pil to perform the resize and predict
     roi_pil = Image.fromarray(roi)
     digit_input = resize_and_pad(roi_pil)
-    plt.subplot(234)
-    plt.imshow(digit_input, cmap="gray")
     
     tensor_input = transform(digit_input).unsqueeze(0).to(device)
     with torch.no_grad():
       output = model(tensor_input)
       prediction = output.argmax(dim=1).item()
       full_number_string += str(prediction)
-  
+    
   return full_number_string
 
 def resize_and_pad(img_pil):
